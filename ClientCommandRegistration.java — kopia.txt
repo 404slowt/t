@@ -1,0 +1,219 @@
+package pl.lordtricker.ltrynek.client.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
+import pl.lordtricker.ltrynek.manager.AutoClickManager;
+import pl.lordtricker.ltrynek.manager.ClientPriceListManager;
+
+public class ClientCommandRegistration {
+    
+    public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
+        dispatcher.register(ClientCommandManager.literal("ltr")
+            .executes(ClientCommandRegistration::showInfo)
+            .then(ClientCommandManager.literal("profiles")
+                .executes(ClientCommandRegistration::showProfiles))
+            .then(ClientCommandManager.literal("add")
+                .then(ClientCommandManager.argument("maxPrice", StringArgumentType.string())
+                    .then(ClientCommandManager.argument("item", StringArgumentType.string())
+                        .executes(ClientCommandRegistration::addItem))))
+            .then(ClientCommandManager.literal("remove")
+                .then(ClientCommandManager.argument("item", StringArgumentType.string())
+                    .executes(ClientCommandRegistration::removeItem)))
+            .then(ClientCommandManager.literal("list")
+                .executes(ClientCommandRegistration::listItems))
+            .then(ClientCommandManager.literal("pomoc")
+                .executes(ClientCommandRegistration::showHelp))
+            .then(ClientCommandManager.literal("help")
+                .executes(ClientCommandRegistration::showHelp))
+            .then(ClientCommandManager.literal("autoclick")
+                .then(ClientCommandManager.literal("on")
+                    .executes(ClientCommandRegistration::enableAutoClick))
+                .then(ClientCommandManager.literal("off")
+                    .executes(ClientCommandRegistration::disableAutoClick))
+                .then(ClientCommandManager.literal("list")
+                    .executes(ClientCommandRegistration::listAutoClick))
+                .then(ClientCommandManager.literal("clear")
+                    .executes(ClientCommandRegistration::clearAutoClick)))
+            .then(ClientCommandManager.literal("config")
+                .then(ClientCommandManager.literal("save")
+                    .executes(ClientCommandRegistration::saveConfig))
+                .then(ClientCommandManager.literal("reload")
+                    .executes(ClientCommandRegistration::reloadConfig))));
+    }
+    
+    private static int showInfo(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aWersja: 1.0.0-Alpha"), false);
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aAktywny profil: default"), false);
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aAuto-click: " + 
+            (AutoClickManager.isAutoClickEnabled() ? "§aWłączony" : "§cWyłączony")), false);
+        return 1;
+    }
+    
+    private static int showProfiles(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aDostępne profile: default"), false);
+        return 1;
+    }
+    
+    private static int addItem(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        try {
+            String maxPrice = StringArgumentType.getString(context, "maxPrice");
+            String item = StringArgumentType.getString(context, "item");
+            
+            // Dodaj do standardowego managera
+            ClientPriceListManager.addItem(item, maxPrice);
+            
+            // Dodaj do auto-click managera
+            AutoClickManager.enableAutoClick(item, maxPrice);
+            
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §aDodano §f" + item + 
+                " §az maksymalną ceną §f" + maxPrice + " §a(z auto-click)"), false);
+            
+            return 1;
+        } catch (Exception e) {
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §cBłąd: " + e.getMessage()), false);
+            return 0;
+        }
+    }
+    
+    private static int removeItem(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        try {
+            String item = StringArgumentType.getString(context, "item");
+            
+            // Usuń ze standardowego managera
+            ClientPriceListManager.removeItem(item);
+            
+            // Usuń z auto-click managera
+            AutoClickManager.removeAutoClick(item);
+            
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §aUsunięto §f" + item + 
+                " §az profilu (i auto-click)"), false);
+            
+            return 1;
+        } catch (Exception e) {
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §cBłąd: " + e.getMessage()), false);
+            return 0;
+        }
+    }
+    
+    private static int listItems(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        try {
+            var items = ClientPriceListManager.getItems();
+            
+            if (items.isEmpty()) {
+                client.player.sendMessage(Text.literal("§6[LT-Rynek] §cBrak przedmiotów w profilu"), false);
+                return 0;
+            }
+            
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §aPrzedmioty w profilu:"), false);
+            items.forEach((item, price) -> {
+                client.player.sendMessage(Text.literal("§f- " + item + " §a(max: " + price + ")"), false);
+            });
+            
+            return 1;
+        } catch (Exception e) {
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §cBłąd: " + e.getMessage()), false);
+            return 0;
+        }
+    }
+    
+    private static int enableAutoClick(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        AutoClickManager.enableAutoClick();
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aAuto-click włączony"), false);
+        return 1;
+    }
+    
+    private static int disableAutoClick(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        AutoClickManager.disableAutoClick();
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §cAuto-click wyłączony"), false);
+        return 1;
+    }
+    
+    private static int listAutoClick(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        var items = AutoClickManager.getAutoClickItems();
+        
+        if (items.isEmpty()) {
+            client.player.sendMessage(Text.literal("§6[LT-Rynek] §cBrak przedmiotów z auto-click"), false);
+            return 0;
+        }
+        
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aPrzedmioty z auto-click:"), false);
+        items.forEach((item, price) -> {
+            client.player.sendMessage(Text.literal("§f- " + item + " §a(max: " + price + ")"), false);
+        });
+        
+        return 1;
+    }
+    
+    private static int clearAutoClick(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        AutoClickManager.clearAutoClick();
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aWyczyszczono wszystkie auto-click"), false);
+        return 1;
+    }
+    
+    private static int showHelp(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aDostępne komendy:"), false);
+        client.player.sendMessage(Text.literal("§f/ltr §a- informacje o modzie"), false);
+        client.player.sendMessage(Text.literal("§f/ltr profiles §a- lista profili"), false);
+        client.player.sendMessage(Text.literal("§f/ltr add <cena> <przedmiot> §a- dodaj z auto-click"), false);
+        client.player.sendMessage(Text.literal("§f/ltr remove <przedmiot> §a- usuń przedmiot"), false);
+        client.player.sendMessage(Text.literal("§f/ltr list §a- lista przedmiotów"), false);
+        client.player.sendMessage(Text.literal("§f/ltr autoclick on/off §a- włącz/wyłącz auto-click"), false);
+        client.player.sendMessage(Text.literal("§f/ltr autoclick list §a- lista auto-click"), false);
+        client.player.sendMessage(Text.literal("§f/ltr autoclick clear §a- wyczyść auto-click"), false);
+        client.player.sendMessage(Text.literal("§f/ltr config save/reload §a- zarządzaj konfiguracją"), false);
+        return 1;
+    }
+    
+    private static int saveConfig(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        // Tutaj dodaj logikę zapisywania konfiguracji
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aKonfiguracja zapisana"), false);
+        return 1;
+    }
+    
+    private static int reloadConfig(CommandContext<FabricClientCommandSource> context) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0;
+        
+        // Tutaj dodaj logikę przeładowania konfiguracji
+        client.player.sendMessage(Text.literal("§6[LT-Rynek] §aKonfiguracja przeładowana"), false);
+        return 1;
+    }
+}

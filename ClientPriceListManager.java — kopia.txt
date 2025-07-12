@@ -1,0 +1,188 @@
+package pl.lordtricker.ltrynek.manager;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
+import net.minecraft.client.MinecraftClient;
+import pl.lordtricker.ltrynek.config.PriceEntry;
+
+import java.io.*;
+import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class ClientPriceListManager {
+    private static final String CONFIG_FILE = "ltrynek-profiles.json";
+    private static final Map<String, String> items = new ConcurrentHashMap<>();
+    private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private static Path configPath;
+    
+    static {
+        initializeConfig();
+    }
+    
+    private static void initializeConfig() {
+        try {
+            MinecraftClient client = MinecraftClient.getInstance();
+            configPath = client.runDirectory.toPath().resolve("config").resolve(CONFIG_FILE);
+            
+            // Utwórz folder config jeśli nie istnieje
+            Files.createDirectories(configPath.getParent());
+            
+            loadConfig();
+        } catch (Exception e) {
+            System.err.println("[LT-Rynek] Błąd inicjalizacji konfiguracji: " + e.getMessage());
+        }
+    }
+    
+    public static void addItem(String item, String maxPrice) {
+        items.put(item.toLowerCase(), maxPrice);
+        saveConfig();
+        System.out.println("[LT-Rynek] Dodano przedmiot: " + item + " (max: " + maxPrice + ")");
+    }
+    
+    public static void removeItem(String item) {
+        String removed = items.remove(item.toLowerCase());
+        if (removed != null) {
+            saveConfig();
+            System.out.println("[LT-Rynek] Usunięto przedmiot: " + item);
+        } else {
+            System.out.println("[LT-Rynek] Nie znaleziono przedmiotu: " + item);
+        }
+    }
+    
+    public static Map<String, String> getItems() {
+        return new HashMap<>(items);
+    }
+    
+    public static String getMaxPrice(String item) {
+        return items.get(item.toLowerCase());
+    }
+    
+    public static boolean hasItem(String item) {
+        return items.containsKey(item.toLowerCase());
+    }
+    
+    public static void clearItems() {
+        items.clear();
+        saveConfig();
+        System.out.println("[LT-Rynek] Wyczyszczono wszystkie przedmioty");
+    }
+    
+    public static void addItemWithAutoClick(String item, String maxPrice) {
+        addItem(item, maxPrice);
+        AutoClickManager.enableAutoClick(item, maxPrice);
+    }
+    
+    public static void removeItemWithAutoClick(String item) {
+        removeItem(item);
+        AutoClickManager.removeAutoClick(item);
+    }
+    
+    private static void loadConfig() {
+        try {
+            if (Files.exists(configPath)) {
+                String jsonContent = Files.readString(configPath);
+                Type type = new TypeToken<ConfigData>(){}.getType();
+                ConfigData configData = gson.fromJson(jsonContent, type);
+                
+                if (configData != null && configData.profiles != null) {
+                    ProfileData defaultProfile = configData.profiles.get("default");
+                    if (defaultProfile != null && defaultProfile.items != null) {
+                        items.clear();
+                        defaultProfile.items.forEach((key, value) -> {
+                            if (value instanceof String) {
+                                items.put(key, (String) value);
+                            } else if (value instanceof PriceEntry) {
+                                PriceEntry entry = (PriceEntry) value;
+                                items.put(key, entry.maxPrice);
+                                if (entry.autoClick) {
+                                    AutoClickManager.enableAutoClick(key, entry.maxPrice);
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                System.out.println("[LT-Rynek] Załadowano konfigurację: " + items.size() + " przedmiotów");
+            } else {
+                createDefaultConfig();
+            }
+        } catch (Exception e) {
+            System.err.println("[LT-Rynek] Błąd ładowania konfiguracji: " + e.getMessage());
+            createDefaultConfig();
+        }
+    }
+    
+    public static void saveConfig() {
+        try {
+            ConfigData configData = new ConfigData();
+            configData.profiles = new HashMap<>();
+            
+            ProfileData defaultProfile = new ProfileData();
+            defaultProfile.items = new HashMap<>();
+            
+            // Zapisz przedmioty z informacją o auto-click
+            items.forEach((key, value) -> {
+                PriceEntry entry = new PriceEntry();
+                entry.maxPrice = value;
+                entry.autoClick = AutoClickManager.getAutoClickItems().containsKey(key);
+                defaultProfile.items.put(key, entry);
+            });
+            
+            configData.profiles.put("default", defaultProfile);
+            configData.settings = new SettingsData();
+            configData.settings.autoClickDelay = 1000;
+            configData.settings.autoClickEnabled = AutoClickManager.isAutoClickEnabled();
+            
+            String jsonContent = gson.toJson(configData);
+            Files.writeString(configPath, jsonContent);
+            
+            System.out.println("[LT-Rynek] Zapisano konfigurację");
+        } catch (Exception e) {
+            System.err.println("[LT-Rynek] Błąd zapisywania konfiguracji: " + e.getMessage());
+        }
+    }
+    
+    private static void createDefaultConfig() {
+        try {
+            ConfigData configData = new ConfigData();
+            configData.profiles = new HashMap<>();
+            configData.profiles.put("default", new ProfileData());
+            configData.settings = new SettingsData();
+            configData.settings.autoClickDelay = 1000;
+            configData.settings.autoClickEnabled = true;
+            
+            String jsonContent = gson.toJson(configData);
+            Files.writeString(configPath, jsonContent);
+            
+            System.out.println("[LT-Rynek] Utworzono domyślną konfigurację");
+        } catch (Exception e) {
+            System.err.println("[LT-Rynek] Błąd tworzenia domyślnej konfiguracji: " + e.getMessage());
+        }
+    }
+    
+    public static void reloadConfig() {
+        items.clear();
+        loadConfig();
+        System.out.println("[LT-Rynek] Przeładowano konfigurację");
+    }
+    
+    // Klasy pomocnicze dla JSON
+    private static class ConfigData {
+        public Map<String, ProfileData> profiles;
+        public SettingsData settings;
+    }
+    
+    private static class ProfileData {
+        public Map<String, Object> items = new HashMap<>();
+    }
+    
+    private static class SettingsData {
+        public long autoClickDelay = 1000;
+        public boolean autoClickEnabled = true;
+    }
+}

@@ -1,0 +1,51 @@
+package pl.lordtricker.ltrynek.mixin;
+
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import pl.lordtricker.ltrynek.manager.AutoClickManager;
+
+@Mixin(HandledScreen.class)
+public class HandledScreenMixin {
+    
+    private static final long GUI_LOAD_DELAY = 800; // 0.8 sekundy na załadowanie GUI
+    
+    @Inject(method = "init()V", at = @At("TAIL"))
+    private void onInit(CallbackInfo ci) {
+        // Uruchom auto-click po inicjalizacji GUI z opóźnieniem
+        new Thread(() -> {
+            try {
+                Thread.sleep(GUI_LOAD_DELAY);
+                AutoClickManager.checkAndClickItems();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+    
+    @Inject(method = "tick()V", at = @At("HEAD"))
+    private void onTick(CallbackInfo ci) {
+        // Sprawdzaj auto-click co 20 ticków (1 sekunda)
+        HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+        if (screen.client != null && screen.client.player != null) {
+            if (screen.client.player.age % 20 == 0) { // Co sekundę
+                AutoClickManager.checkAndClickItems();
+            }
+        }
+    }
+    
+    @Inject(method = "onDisplayed()V", at = @At("TAIL"))
+    private void onDisplayed(CallbackInfo ci) {
+        // Dodatkowe sprawdzenie po wyświetleniu GUI
+        new Thread(() -> {
+            try {
+                Thread.sleep(GUI_LOAD_DELAY / 2); // Krótsze opóźnienie
+                AutoClickManager.checkAndClickItems();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+}
