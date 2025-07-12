@@ -1,0 +1,78 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package pl.lordtricker.ltrynek.client;
+
+import java.util.Map;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.minecraft.class_310;
+import pl.lordtricker.ltrynek.client.command.ClientCommandRegistration;
+import pl.lordtricker.ltrynek.client.config.ConfigLoader;
+import pl.lordtricker.ltrynek.client.config.PriceEntry;
+import pl.lordtricker.ltrynek.client.config.ServerEntry;
+import pl.lordtricker.ltrynek.client.config.ServersConfig;
+import pl.lordtricker.ltrynek.client.keybinding.ToggleScanner;
+import pl.lordtricker.ltrynek.client.manager.ClientPriceListManager;
+import pl.lordtricker.ltrynek.client.util.ColorUtils;
+import pl.lordtricker.ltrynek.client.util.Messages;
+
+@Environment(EnvType.CLIENT)
+public class LtrynekClient implements ClientModInitializer {
+    public static ServersConfig serversConfig;
+
+    public void onInitializeClient() {
+        ToggleScanner.init();
+        serversConfig = ConfigLoader.loadConfig();
+
+        for(ServerEntry entry : serversConfig.servers) {
+            ClientPriceListManager.setActiveProfile(entry.profileName);
+
+            for(PriceEntry pe : entry.prices) {
+                ClientPriceListManager.addPriceEntry(pe);
+            }
+        }
+
+        ClientPriceListManager.setActiveProfile(serversConfig.defaultProfile);
+        ClientPlayConnectionEvents.JOIN.register((ClientPlayConnectionEvents.Join)(handler, sender, client) -> {
+            String address = getServerAddress();
+            ServerEntry entry = findServerEntry(address);
+            if (entry != null) {
+                ClientPriceListManager.setActiveProfile(entry.profileName);
+                if (client.field_1724 != null) {
+                    String welcomeMsg = Messages.format("player.join", Map.of("profile", entry.profileName));
+                    client.field_1724.method_7353(ColorUtils.translateColorCodes(welcomeMsg), false);
+                }
+            } else {
+                String def = serversConfig.defaultProfile;
+                ClientPriceListManager.setActiveProfile(def);
+                if (client.field_1724 != null) {
+                    String welcomeMsg = Messages.format("player.join", Map.of("profile", def));
+                    client.field_1724.method_7353(ColorUtils.translateColorCodes(welcomeMsg), false);
+                }
+            }
+
+        });
+        ClientCommandRegistration.registerCommands();
+    }
+
+    public static String getServerAddress() {
+        return class_310.method_1551().method_1558() != null ? class_310.method_1551().method_1558().field_3761 : "singleplayer";
+    }
+
+    public static ServerEntry findServerEntry(String address) {
+        for(ServerEntry entry : serversConfig.servers) {
+            for(String domain : entry.domains) {
+                if (address.equalsIgnoreCase(domain) || address.toLowerCase().endsWith("." + domain.toLowerCase())) {
+                    return entry;
+                }
+            }
+        }
+
+        return null;
+    }
+}

@@ -1,0 +1,362 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package pl.lordtricker.ltrynek.client.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import java.util.List;
+import java.util.Map;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.class_2558;
+import net.minecraft.class_2561;
+import net.minecraft.class_2568;
+import net.minecraft.class_2583;
+import net.minecraft.class_2960;
+import net.minecraft.class_5250;
+import net.minecraft.class_7157;
+import net.minecraft.class_7923;
+import net.minecraft.class_2558.class_2559;
+import net.minecraft.class_2568.class_5247;
+import pl.lordtricker.ltrynek.client.LtrynekClient;
+import pl.lordtricker.ltrynek.client.config.ConfigLoader;
+import pl.lordtricker.ltrynek.client.config.PriceEntry;
+import pl.lordtricker.ltrynek.client.config.ServerEntry;
+import pl.lordtricker.ltrynek.client.keybinding.ToggleScanner;
+import pl.lordtricker.ltrynek.client.manager.ClientPriceListManager;
+import pl.lordtricker.ltrynek.client.manager.ClientSearchListManager;
+import pl.lordtricker.ltrynek.client.util.ColorUtils;
+import pl.lordtricker.ltrynek.client.util.CompositeKeyUtil;
+import pl.lordtricker.ltrynek.client.util.Messages;
+import pl.lordtricker.ltrynek.client.util.PriceFormatter;
+
+@Environment(EnvType.CLIENT)
+public class ClientCommandRegistration {
+    public static void registerCommands() {
+        ClientCommandRegistrationCallback.EVENT.register(ClientCommandRegistration::registerLtrynekCommand);
+    }
+
+    private static void registerLtrynekCommand(CommandDispatcher<FabricClientCommandSource> dispatcher, class_7157 registryAccess) {
+        dispatcher.register((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)ClientCommandManager.literal("ltr").executes((ctx) -> {
+            String activeProfile = ClientPriceListManager.getActiveProfile();
+            String message = Messages.format("mod.info", Map.of("profile", activeProfile));
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(message));
+            return 1;
+        })).then(ClientCommandManager.literal("scan").executes((ctx) -> {
+            ToggleScanner.scanningEnabled = !ToggleScanner.scanningEnabled;
+            String msgKey = ToggleScanner.scanningEnabled ? "command.scanner.toggle.on" : "command.scanner.toggle.off";
+            String msg = Messages.get(msgKey);
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        }))).then(ClientCommandManager.literal("profiles").executes((ctx) -> {
+            String allProfiles = ClientPriceListManager.listProfiles();
+            String[] profiles = allProfiles.split(",\\s*");
+            String headerStr = Messages.get("command.profiles.header");
+            class_5250 finalText = (class_5250)ColorUtils.translateColorCodes(headerStr);
+            finalText.method_10852(class_2561.method_43470("\n"));
+            String activeProfile = ClientPriceListManager.getActiveProfile();
+
+            for(String profile : profiles) {
+                String trimmedProfile = profile.trim();
+                String lineTemplate;
+                if (trimmedProfile.equals(activeProfile)) {
+                    lineTemplate = Messages.format("profile.picked.line", Map.of("profile", trimmedProfile));
+                } else {
+                    lineTemplate = Messages.format("profile.available.line", Map.of("profile", trimmedProfile));
+                }
+
+                class_5250 lineText = (class_5250)ColorUtils.translateColorCodes(lineTemplate);
+                if (!trimmedProfile.equals(activeProfile)) {
+                    class_2583 clickableStyle = class_2583.field_24360.method_10958(new class_2558(class_2559.field_11750, "/ltr profile " + trimmedProfile)).method_10949(new class_2568(class_5247.field_24342, class_2561.method_43470("Kliknij, aby zmienić profil na " + trimmedProfile)));
+                    lineText.method_10862(clickableStyle);
+                }
+
+                finalText.method_10852(lineText).method_10852(class_2561.method_43470("\n"));
+            }
+
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(finalText);
+            return 1;
+        }))).then(ClientCommandManager.literal("profile").then(ClientCommandManager.argument("profile", StringArgumentType.word()).executes((ctx) -> {
+            String profile = StringArgumentType.getString(ctx, "profile");
+            ClientPriceListManager.setActiveProfile(profile);
+            String msg = Messages.format("command.profile.change", Map.of("profile", profile));
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(ClientCommandManager.literal("add").then(ClientCommandManager.argument("maxPrice", StringArgumentType.word()).then(ClientCommandManager.argument("itemName", StringArgumentType.greedyString()).suggests((context, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase();
+            if (remaining.startsWith("mc:")) {
+                remaining = "minecraft:" + remaining.substring(3);
+            }
+
+            if (remaining.contains("minecraft:")) {
+                for(class_2960 itemId : class_7923.field_41178.method_10235()) {
+                    String asString = itemId.toString();
+                    if (asString.contains(remaining)) {
+                        builder.suggest(asString);
+                    }
+                }
+            }
+
+            return builder.buildFuture();
+        }).executes((ctx) -> {
+            String maxPriceStr = StringArgumentType.getString(ctx, "maxPrice");
+            double parsedPrice = PriceFormatter.parsePrice(maxPriceStr);
+            if (parsedPrice < (double)0.0F) {
+                ((FabricClientCommandSource)ctx.getSource()).sendError(class_2561.method_43470("Invalid price format: " + maxPriceStr));
+                return 0;
+            } else {
+                String fullItemName = StringArgumentType.getString(ctx, "itemName");
+                ClientPriceListManager.addPriceEntry(fullItemName, parsedPrice);
+                String activeProfile = ClientPriceListManager.getActiveProfile();
+                String friendly = CompositeKeyUtil.getFriendlyName(CompositeKeyUtil.createCompositeKey(fullItemName));
+                String shortPrice = PriceFormatter.formatPrice(parsedPrice);
+                String msg = Messages.format("command.add.success", Map.of("item", friendly, "price", shortPrice, "profile", activeProfile));
+                ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+                return 1;
+            }
+        }))))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("itemName", StringArgumentType.greedyString()).executes((ctx) -> {
+            String rawItem = StringArgumentType.getString(ctx, "itemName");
+            String activeProfile = ClientPriceListManager.getActiveProfile();
+            ClientPriceListManager.removePriceEntry(rawItem);
+            String friendly = CompositeKeyUtil.getFriendlyName(CompositeKeyUtil.createCompositeKey(rawItem));
+            String msg = Messages.format("command.remove.success", Map.of("item", friendly, "profile", activeProfile));
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(ClientCommandManager.literal("list").executes((ctx) -> {
+            String activeProfile = ClientPriceListManager.getActiveProfile();
+            List<PriceEntry> entries = (List)ClientPriceListManager.getAllProfiles().get(activeProfile);
+            class_5250 finalText = class_2561.method_43473();
+            if (entries != null) {
+                for(PriceEntry pe : entries) {
+                    String compositeKey = CompositeKeyUtil.getCompositeKeyFromEntry(pe);
+                    String friendlyName = CompositeKeyUtil.getFriendlyName(compositeKey);
+                    String priceStr = PriceFormatter.formatPrice(pe.maxPrice);
+                    String editIconStr = Messages.get("pricelist.icon.edit");
+                    class_5250 editIcon = (class_5250)ColorUtils.translateColorCodes(editIconStr);
+                    editIcon.method_10862(class_2583.field_24360.method_10958(new class_2558(class_2559.field_11745, "/ltr add " + priceStr + " " + friendlyName)).method_10949(new class_2568(class_5247.field_24342, class_2561.method_43470("Kliknij aby zedytować " + friendlyName))));
+                    String removeIconStr = Messages.get("pricelist.icon.remove");
+                    class_5250 removeIcon = (class_5250)ColorUtils.translateColorCodes(removeIconStr);
+                    removeIcon.method_10862(class_2583.field_24360.method_10958(new class_2558(class_2559.field_11750, "/ltr remove " + friendlyName)).method_10949(new class_2568(class_5247.field_24342, class_2561.method_43470("Kliknij aby usunąć " + friendlyName))));
+                    String itemLineStr = Messages.format("pricelist.item_line", Map.of("item", friendlyName, "price", priceStr));
+                    class_5250 itemLine = (class_5250)ColorUtils.translateColorCodes(itemLineStr);
+                    class_5250 lineText = class_2561.method_43473().method_10852(editIcon).method_10852(class_2561.method_43470(" ")).method_10852(removeIcon).method_10852(class_2561.method_43470(" ")).method_10852(itemLine).method_10852(class_2561.method_43470("\n"));
+                    finalText.method_10852(lineText);
+                }
+            }
+
+            String msgHeader = Messages.format("command.list", Map.of("profile", activeProfile, "list", ""));
+            class_5250 header = (class_5250)ColorUtils.translateColorCodes(msgHeader);
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(header);
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(finalText);
+            return 1;
+        }))).then(ClientCommandManager.literal("pomoc").executes((ctx) -> {
+            String msg = Messages.get("command.help");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        }))).then(((LiteralArgumentBuilder)ClientCommandManager.literal("config").then(ClientCommandManager.literal("save").executes((ctx) -> {
+            syncMemoryToConfig();
+            ConfigLoader.saveAllConfigs(LtrynekClient.serversConfig);
+            String msg = Messages.get("command.config.save.success");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        }))).then(ClientCommandManager.literal("reload").executes((ctx) -> {
+            LtrynekClient.serversConfig = ConfigLoader.loadConfig();
+            ClientPriceListManager.clearAllProfiles();
+            reinitProfilesFromConfig();
+            String msg = Messages.get("command.config.reload.success");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(((LiteralArgumentBuilder)((LiteralArgumentBuilder)ClientCommandManager.literal("sounds").executes((ctx) -> {
+            boolean current = LtrynekClient.serversConfig.soundsEnabled;
+            String msg = current ? Messages.get("command.sounds.current_on") : Messages.get("command.sounds.current_off");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })).then(ClientCommandManager.literal("on").executes((ctx) -> {
+            LtrynekClient.serversConfig.soundsEnabled = true;
+            String msg = Messages.get("command.sounds.enabled");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        }))).then(ClientCommandManager.literal("off").executes((ctx) -> {
+            LtrynekClient.serversConfig.soundsEnabled = false;
+            String msg = Messages.get("command.sounds.disabled");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)((LiteralArgumentBuilder)ClientCommandManager.literal("search").then(ClientCommandManager.literal("add").then(ClientCommandManager.argument("item", StringArgumentType.greedyString()).suggests((context, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase();
+            if (remaining.startsWith("mc:")) {
+                remaining = "minecraft:" + remaining.substring(3);
+            }
+
+            if (remaining.contains("minecraft:")) {
+                for(class_2960 itemId : class_7923.field_41178.method_10235()) {
+                    String asString = itemId.toString();
+                    if (asString.contains(remaining)) {
+                        builder.suggest(asString);
+                    }
+                }
+            }
+
+            return builder.buildFuture();
+        }).executes((ctx) -> {
+            String rawItem = StringArgumentType.getString(ctx, "item");
+            ClientSearchListManager.addItem(rawItem);
+            String msg = Messages.format("command.searchlist.add", Map.of("item", rawItem));
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(ClientCommandManager.literal("remove").then(ClientCommandManager.argument("item", StringArgumentType.greedyString()).executes((ctx) -> {
+            String rawItem = StringArgumentType.getString(ctx, "item");
+            ClientSearchListManager.removeItem(rawItem);
+            String friendly = CompositeKeyUtil.getFriendlyName(CompositeKeyUtil.createCompositeKey(rawItem));
+            String msg = Messages.format("command.searchlist.remove", Map.of("item", friendly));
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        })))).then(ClientCommandManager.literal("start").executes((ctx) -> {
+            ClientSearchListManager.startSearch();
+            String msg = Messages.get("command.searchlist.start");
+            ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(msg));
+            return 1;
+        }))).then(ClientCommandManager.literal("stop").executes((ctx) -> {
+            ClientSearchListManager.stopSearch();
+            List<String> searchItems = ClientSearchListManager.getSearchList();
+            if (searchItems.isEmpty()) {
+                String emptyMsg = Messages.get("command.searchlist.list.empty");
+                ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(emptyMsg));
+                return 1;
+            } else {
+                class_5250 finalText = class_2561.method_43473();
+                String headerRaw = Messages.get("command.searchlist.stop.header");
+                finalText.method_10852(ColorUtils.translateColorCodes(headerRaw)).method_10852(class_2561.method_43470("\n"));
+
+                for(String compositeKey : searchItems) {
+                    ClientSearchListManager.Stats stats = ClientSearchListManager.getStats(compositeKey);
+                    if (stats != null && stats.getCount() != 0) {
+                        String lineRaw = Messages.format("command.searchlist.stop.line", Map.of("item", CompositeKeyUtil.getFriendlyName(compositeKey), "count", String.valueOf(stats.getCount()), "min", PriceFormatter.formatPrice(stats.getMin()), "max", PriceFormatter.formatPrice(stats.getMax()), "avg", PriceFormatter.formatPrice(stats.getAverage()), "median", PriceFormatter.formatPrice(stats.getMedian()), "quartile1", PriceFormatter.formatPrice(stats.getQuartile1()), "quartile3", PriceFormatter.formatPrice(stats.getQuartile3())));
+                        finalText.method_10852(ColorUtils.translateColorCodes(lineRaw)).method_10852(class_2561.method_43470("\n"));
+                    }
+                }
+
+                ((FabricClientCommandSource)ctx.getSource()).sendFeedback(finalText);
+                return 1;
+            }
+        }))).then(ClientCommandManager.literal("list").executes((ctx) -> {
+            List<String> searchItems = ClientSearchListManager.getSearchList();
+            if (searchItems.isEmpty()) {
+                String emptyMsg = Messages.get("command.searchlist.list.empty");
+                ((FabricClientCommandSource)ctx.getSource()).sendFeedback(ColorUtils.translateColorCodes(emptyMsg));
+                return 1;
+            } else {
+                String header = Messages.get("command.searchlist.list.header");
+                class_5250 finalText = (class_5250)ColorUtils.translateColorCodes(header);
+                finalText.method_10852(class_2561.method_43470("\n"));
+
+                for(String compositeKey : searchItems) {
+                    String friendly = CompositeKeyUtil.getFriendlyName(compositeKey);
+                    class_5250 friendlyText = class_2561.method_43470(friendly);
+                    String removeIconStr = Messages.get("pricelist.icon.remove");
+                    class_5250 removeIcon = (class_5250)ColorUtils.translateColorCodes(removeIconStr);
+                    removeIcon.method_10862(class_2583.field_24360.method_10958(new class_2558(class_2559.field_11750, "/ltr search remove " + friendly)).method_10949(new class_2568(class_5247.field_24342, class_2561.method_43470(Messages.get("command.searchlist.list.remove.hover")))));
+                    class_5250 lineText = class_2561.method_43473().method_10852(removeIcon).method_10852(class_2561.method_43470(" ")).method_10852(friendlyText);
+                    finalText.method_10852(lineText).method_10852(class_2561.method_43470("\n"));
+                }
+
+                ((FabricClientCommandSource)ctx.getSource()).sendFeedback(finalText);
+                return 1;
+            }
+        }))));
+    }
+
+    private static void syncMemoryToConfig() {
+        Map<String, List<PriceEntry>> allProfiles = ClientPriceListManager.getAllProfiles();
+
+        for(Map.Entry<String, List<PriceEntry>> profEntry : allProfiles.entrySet()) {
+            String profileName = (String)profEntry.getKey();
+            List<PriceEntry> priceEntries = (List)profEntry.getValue();
+            ServerEntry se = findServerEntryByProfile(profileName);
+            if (se != null) {
+                for(PriceEntry storedPe : priceEntries) {
+                    boolean exists = se.prices.stream().anyMatch((pex) -> pex.name.equals(storedPe.name));
+                    if (!exists) {
+                        PriceEntry pe = new PriceEntry();
+                        pe.name = storedPe.name;
+                        pe.maxPrice = storedPe.maxPrice;
+                        pe.lore = storedPe.lore;
+                        pe.material = storedPe.material;
+                        pe.enchants = storedPe.enchants;
+                        se.prices.add(pe);
+                    }
+                }
+            }
+        }
+
+        ConfigLoader.saveAllConfigs(LtrynekClient.serversConfig);
+    }
+
+    private static void reinitProfilesFromConfig() {
+        for(ServerEntry entry : LtrynekClient.serversConfig.servers) {
+            ClientPriceListManager.setActiveProfile(entry.profileName);
+
+            for(PriceEntry pe : entry.prices) {
+                String rawItem = pe.name;
+                if (pe.lore != null && !pe.lore.isEmpty()) {
+                    rawItem = rawItem + "(\"" + pe.lore + "\")";
+                }
+
+                if (pe.material != null && !pe.material.isEmpty()) {
+                    rawItem = rawItem + "[\"" + pe.material + "\"]";
+                }
+
+                if (pe.enchants != null && !pe.enchants.isEmpty()) {
+                    rawItem = rawItem + "{\"" + pe.enchants + "\"}";
+                }
+
+                ClientPriceListManager.addPriceEntry(rawItem, pe.maxPrice);
+            }
+        }
+
+        String address = LtrynekClient.getServerAddress();
+        ServerEntry serverEntry = findServerEntryByAddress(address);
+        if (serverEntry != null) {
+            ClientPriceListManager.setActiveProfile(serverEntry.profileName);
+        } else {
+            ClientPriceListManager.setActiveProfile(LtrynekClient.serversConfig.defaultProfile);
+        }
+
+    }
+
+    private static ServerEntry findServerEntryByAddress(String address) {
+        if (LtrynekClient.serversConfig != null && LtrynekClient.serversConfig.servers != null) {
+            for(ServerEntry entry : LtrynekClient.serversConfig.servers) {
+                for(String domain : entry.domains) {
+                    if (address.equalsIgnoreCase(domain) || address.toLowerCase().endsWith("." + domain.toLowerCase())) {
+                        return entry;
+                    }
+                }
+            }
+
+            return null;
+        } else {
+            return null;
+        }
+    }
+
+    private static ServerEntry findServerEntryByProfile(String profileName) {
+        if (LtrynekClient.serversConfig != null && LtrynekClient.serversConfig.servers != null) {
+            for(ServerEntry entry : LtrynekClient.serversConfig.servers) {
+                if (entry.profileName.equalsIgnoreCase(profileName)) {
+                    return entry;
+                }
+            }
+
+            return null;
+        } else {
+            return null;
+        }
+    }
+}

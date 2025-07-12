@@ -1,0 +1,325 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package pl.lordtricker.ltrynek.client.mixin;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.class_1109;
+import net.minecraft.class_1657;
+import net.minecraft.class_1703;
+import net.minecraft.class_1735;
+import net.minecraft.class_1799;
+import net.minecraft.class_1836;
+import net.minecraft.class_2561;
+import net.minecraft.class_2960;
+import net.minecraft.class_310;
+import net.minecraft.class_332;
+import net.minecraft.class_3414;
+import net.minecraft.class_3936;
+import net.minecraft.class_465;
+import net.minecraft.class_7923;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import pl.lordtricker.ltrynek.client.LtrynekClient;
+import pl.lordtricker.ltrynek.client.config.PriceEntry;
+import pl.lordtricker.ltrynek.client.config.ServerEntry;
+import pl.lordtricker.ltrynek.client.keybinding.ToggleScanner;
+import pl.lordtricker.ltrynek.client.manager.ClientPriceListManager;
+import pl.lordtricker.ltrynek.client.manager.ClientSearchListManager;
+import pl.lordtricker.ltrynek.client.util.ColorStripUtils;
+import pl.lordtricker.ltrynek.client.util.EnchantMapper;
+
+@Environment(EnvType.CLIENT)
+@Mixin({class_465.class})
+public abstract class HandledScreenMixin {
+    @Shadow
+    protected int field_2776;
+    @Shadow
+    protected int field_2800;
+    private int lastMatchedCount = 0;
+    private static final Pattern NEWER_PATTERN = Pattern.compile("ResourceKey\\[\\s*minecraft:enchantment\\s*/\\s*minecraft:([^\\]]+)\\]\\s*=Enchantment [^}]+}\\s*=>\\s*(\\d+)");
+    private static final Pattern OLDER_PATTERN = Pattern.compile("\\{id:\"([^\"]+)\",lvl:(\\d+)s\\}");
+
+    @Inject(
+        method = {"render"},
+        at = {@At("TAIL")}
+    )
+    private void onRender(class_332 context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (ToggleScanner.scanningEnabled) {
+            class_1703 handler = ((class_3936)this).method_17577();
+            List<class_1735> slots = ((ScreenHandlerAccessor)handler).getSlots();
+            int matchedCount = 0;
+
+            for(class_1735 slot : slots) {
+                if (this.processSlot(context, slot)) {
+                    ++matchedCount;
+                }
+            }
+
+            if (LtrynekClient.serversConfig != null && LtrynekClient.serversConfig.soundsEnabled && matchedCount != this.lastMatchedCount && matchedCount > 0) {
+                this.playAlarmSound(matchedCount);
+            }
+
+            this.lastMatchedCount = matchedCount;
+        }
+    }
+
+    private boolean processSlot(class_332 context, class_1735 slot) {
+        class_1799 stack = slot.method_7677();
+        if (stack.method_7960()) {
+            return false;
+        } else {
+            class_1657 player = class_310.method_1551().field_1724;
+            List<class_2561> tooltip = stack.method_7950(player, class_1836.field_41070);
+            List<String> loreLines = new ArrayList();
+
+            for(class_2561 line : tooltip) {
+                String plain = line.getString();
+                String noColorLine = ColorStripUtils.stripAllColorsAndFormats(plain);
+                loreLines.add(noColorLine);
+            }
+
+            String rawEnchants = stack.method_7921().toString();
+            Matcher enchantMatcherNew = NEWER_PATTERN.matcher(rawEnchants);
+            StringBuilder enchantBuilder = new StringBuilder();
+
+            String mappedEnchant;
+            boolean foundAny;
+            for(foundAny = false; enchantMatcherNew.find(); enchantBuilder.append(mappedEnchant)) {
+                foundAny = true;
+                String enchId = enchantMatcherNew.group(1).trim();
+                String levelStr = enchantMatcherNew.group(2).trim();
+                String shortEnchant = enchId + levelStr;
+                mappedEnchant = EnchantMapper.mapEnchant(shortEnchant, true);
+                if (!enchantBuilder.isEmpty()) {
+                    enchantBuilder.append(",");
+                }
+            }
+
+            String mappedEnchant;
+            if (!foundAny) {
+                for(Matcher enchantMatcherOld = OLDER_PATTERN.matcher(rawEnchants); enchantMatcherOld.find(); enchantBuilder.append(mappedEnchant)) {
+                    String enchId = enchantMatcherOld.group(1).trim();
+                    String levelStr = enchantMatcherOld.group(2).trim();
+                    if (enchId.startsWith("minecraft:")) {
+                        enchId = enchId.substring("minecraft:".length());
+                    }
+
+                    mappedEnchant = enchId + levelStr;
+                    mappedEnchant = EnchantMapper.mapEnchant(mappedEnchant, false);
+                    if (!enchantBuilder.isEmpty()) {
+                        enchantBuilder.append(",");
+                    }
+                }
+            }
+
+            String enchantmentsString = enchantBuilder.toString();
+            if (!enchantmentsString.isEmpty()) {
+                loreLines.add(enchantmentsString);
+            }
+
+            String activeProfile = ClientPriceListManager.getActiveProfile();
+            ServerEntry entry = this.findServerEntryByProfile(activeProfile);
+            if (entry == null) {
+                return false;
+            } else {
+                mappedEnchant = entry.loreRegex;
+                mappedEnchant = entry.highlightColor;
+                String colorStackStr = entry.highlightColorStack != null && !entry.highlightColorStack.isEmpty() ? entry.highlightColorStack : mappedEnchant;
+                int highlightColor = this.parseColor(mappedEnchant);
+                int highlightColorStack = this.parseColor(colorStackStr);
+                double foundPrice = (double)-1.0F;
+                Pattern pattern = Pattern.compile(mappedEnchant);
+
+                for(String plain : loreLines) {
+                    Matcher m = pattern.matcher(plain);
+                    if (m.find()) {
+                        String priceGroup = m.group(1);
+                        double parsedPrice = this.parsePriceWithSuffix(priceGroup);
+                        if (parsedPrice >= (double)0.0F) {
+                            foundPrice = parsedPrice;
+                            break;
+                        }
+                    }
+                }
+
+                if (foundPrice < (double)0.0F) {
+                    return false;
+                } else {
+                    class_2960 id = class_7923.field_41178.method_10221(stack.method_7909());
+                    String materialId = id.toString();
+                    String displayName = stack.method_7964().getString();
+                    String noColorName = ColorStripUtils.stripAllColorsAndFormats(displayName);
+                    int stackSize = stack.method_7947();
+                    boolean isStack = stackSize > 1;
+                    double finalPrice = isStack ? foundPrice / (double)stackSize : foundPrice;
+                    if (ClientSearchListManager.isSearchActive()) {
+                        String uniqueKey = slot.field_7874 + "|" + noColorName + "|" + finalPrice + "|" + stackSize;
+                        if (!ClientSearchListManager.isAlreadyCounted(uniqueKey)) {
+                            ClientSearchListManager.markAsCounted(uniqueKey);
+                            String lowerName = noColorName.toLowerCase();
+
+                            for(String compositeKey : ClientSearchListManager.getSearchList()) {
+                                if (ClientSearchListManager.matchesSearchTerm(compositeKey, noColorName, loreLines, materialId, enchantmentsString)) {
+                                    ClientSearchListManager.updateStats(compositeKey, finalPrice, stackSize);
+                                }
+                            }
+                        }
+                    }
+
+                    PriceEntry matchedEntry = ClientPriceListManager.findMatchingPriceEntry(noColorName, loreLines, materialId, enchantmentsString);
+                    if (matchedEntry == null) {
+                        return false;
+                    } else {
+                        double maxPrice = matchedEntry.maxPrice;
+                        if (finalPrice <= maxPrice) {
+                            double ratio = finalPrice / maxPrice;
+                            if (ratio > (double)1.0F) {
+                                ratio = (double)1.0F;
+                            }
+
+                            double alphaF = (double)1.0F - (double)0.75F * ratio;
+                            if (alphaF < 0.3) {
+                                alphaF = 0.3;
+                            }
+
+                            int computedAlpha = (int)(alphaF * (double)255.0F) & 255;
+                            int baseRGB = isStack ? highlightColorStack & 16777215 : highlightColor & 16777215;
+                            int dynamicColor = computedAlpha << 24 | baseRGB;
+                            int realX = this.field_2776 + slot.field_7873;
+                            int realY = this.field_2800 + slot.field_7872;
+                            context.method_25294(realX, realY, realX + 16, realY + 16, dynamicColor);
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void playAlarmSound(int matchedCount) {
+        String activeProfile = ClientPriceListManager.getActiveProfile();
+        ServerEntry entry = this.findServerEntryByProfile(activeProfile);
+        if (entry != null) {
+            String miniSound = entry.miniAlarmSound;
+            String stackSound = entry.miniAlarmSoundStack;
+            if (miniSound == null) {
+                miniSound = "";
+            }
+
+            if (stackSound == null) {
+                stackSound = "";
+            }
+
+            if (matchedCount <= 9) {
+                this.playSoundNTimes(miniSound, matchedCount);
+            } else {
+                this.playSoundNTimes(stackSound, 1);
+            }
+
+        }
+    }
+
+    private void playSoundNTimes(String soundId, int times) {
+        if (!soundId.isEmpty() && times > 0) {
+            class_2960 id = class_2960.method_12829(soundId);
+            if (id != null) {
+                final class_3414 soundEvent = (class_3414)class_7923.field_41172.method_10223(id);
+                if (soundEvent != null) {
+                    final Timer timer = new Timer();
+                    long initialDelay = 300L;
+                    long interval = 150L;
+
+                    for(int i = 0; i < times; ++i) {
+                        long delay = initialDelay + (long)i * interval;
+                        timer.schedule(new TimerTask() {
+                            public void run() {
+                                class_310.method_1551().execute(() -> class_310.method_1551().method_1483().method_4873(class_1109.method_4757(soundEvent, 1.0F, 1.0F)));
+                            }
+                        }, delay);
+                    }
+
+                    timer.schedule(new TimerTask() {
+                        public void run() {
+                            timer.cancel();
+                        }
+                    }, initialDelay + (long)times * interval + 50L);
+                }
+            }
+        }
+    }
+
+    private double parsePriceWithSuffix(String raw) {
+        raw = raw.trim().replace(" ", "");
+        String lower = raw.toLowerCase();
+        double multiplier = (double)1.0F;
+        if (lower.endsWith("mld")) {
+            multiplier = (double)1.0E9F;
+            raw = raw.substring(0, raw.length() - 3);
+        } else if (lower.endsWith("m")) {
+            multiplier = (double)1000000.0F;
+            raw = raw.substring(0, raw.length() - 1);
+        } else if (lower.endsWith("k")) {
+            multiplier = (double)1000.0F;
+            raw = raw.substring(0, raw.length() - 1);
+        }
+
+        if (!raw.contains(".")) {
+            int i = raw.indexOf(44, raw.length() - 3);
+            if (i != -1) {
+                String var10000 = raw.substring(0, i);
+                raw = var10000 + "." + raw.substring(i + 1);
+            }
+        }
+
+        raw = raw.replace(",", "");
+
+        try {
+            double base = Double.parseDouble(raw);
+            return base * multiplier;
+        } catch (NumberFormatException var7) {
+            return (double)-1.0F;
+        }
+    }
+
+    private ServerEntry findServerEntryByProfile(String profileName) {
+        if (LtrynekClient.serversConfig != null && LtrynekClient.serversConfig.servers != null) {
+            for(ServerEntry se : LtrynekClient.serversConfig.servers) {
+                if (se.profileName.equals(profileName)) {
+                    return se;
+                }
+            }
+
+            return null;
+        } else {
+            return null;
+        }
+    }
+
+    private int parseColor(String colorStr) {
+        if (colorStr.startsWith("#")) {
+            colorStr = colorStr.substring(1);
+        }
+
+        if (colorStr.length() == 6) {
+            colorStr = "FF" + colorStr;
+        }
+
+        long argb = Long.parseLong(colorStr, 16);
+        return (int)(argb & -1L);
+    }
+}
